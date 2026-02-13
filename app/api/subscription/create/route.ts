@@ -1,28 +1,20 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { MercadoPagoConfig } from "mercadopago"
 import { prisma } from "@/lib/prisma"
+import { randomUUID } from "crypto"
 
 // Validar se as chaves do Mercado Pago estão configuradas
 if (!process.env.MERCADOPAGO_ACCESS_TOKEN) {
   console.error("⚠️ MERCADOPAGO_ACCESS_TOKEN não está configurada no arquivo .env")
 }
 
-const client = process.env.MERCADOPAGO_ACCESS_TOKEN
-  ? new MercadoPagoConfig({
-      accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN,
-      options: {
-        timeout: 5000,
-        idempotencyKey: "abc",
-      },
-    })
-  : null
+const mercadopagoAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN || ""
 
 export async function POST(req: Request) {
   try {
     // Verificar se o Mercado Pago está configurado
-    if (!client) {
+    if (!mercadopagoAccessToken) {
       return NextResponse.json(
         {
           error: "Serviço de pagamento não configurado",
@@ -50,11 +42,20 @@ export async function POST(req: Request) {
     }
 
     // Receber planId do body
-    const { planId } = await req.json()
+    const { planId, durationMonths } = await req.json()
 
     if (!planId) {
       return NextResponse.json(
         { error: "ID do plano é obrigatório" },
+        { status: 400 }
+      )
+    }
+
+    const selectedDuration = Number(durationMonths) || 1
+    const validDurations = [1, 6, 12]
+    if (!validDurations.includes(selectedDuration)) {
+      return NextResponse.json(
+        { error: "Duração inválida. Use 1, 6 ou 12 meses." },
         { status: 400 }
       )
     }
@@ -127,16 +128,35 @@ export async function POST(req: Request) {
     
     baseUrl = baseUrl.replace(/\/$/, '')
 
-    // Verificar se o plano tem um ID do Mercado Pago
-    // Se não tiver, criar o plano primeiro
-    let mercadoPagoPlanId = plan.mercadoPagoPlanId
+    const selectedPrice =
+      selectedDuration === 1
+        ? plan.price
+        : selectedDuration === 6
+          ? plan.price6Months
+          : plan.price12Months
+
+    if (selectedPrice === null || selectedPrice === undefined) {
+      return NextResponse.json(
+        { error: "Preço não configurado para a duração selecionada" },
+        { status: 400 }
+      )
+    }
+
+    const storedPlanId =
+      selectedDuration === 1
+        ? plan.mercadoPagoPlanId
+        : selectedDuration === 6
+          ? plan.mercadoPagoPlanId6Months
+          : plan.mercadoPagoPlanId12Months
+
+    let mercadoPagoPlanId = storedPlanId
 
     if (!mercadoPagoPlanId) {
       // Criar plano no Mercado Pago
       console.log("📦 Criando plano no Mercado Pago...")
       console.log("📋 Dados do plano:", {
         name: plan.name,
-        price: plan.price,
+        price: selectedPrice,
         baseUrl: baseUrl,
       })
       
@@ -164,9 +184,9 @@ export async function POST(req: Request) {
       const planData: any = {
         reason: plan.name,
         auto_recurring: {
-          frequency: 1,
+          frequency: selectedDuration,
           frequency_type: "months",
-          transaction_amount: plan.price,
+          transaction_amount: selectedPrice,
           currency_id: "BRL",
           repetitions: null, // null = infinito
         },
@@ -185,7 +205,8 @@ export async function POST(req: Request) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.MERCADOPAGO_ACCESS_TOKEN}`,
+            Authorization: `Bearer ${mercadopagoAccessToken}`,
+            "X-Idempotency-Key": randomUUID(),
           },
           body: JSON.stringify(planData),
         }
@@ -209,7 +230,12 @@ export async function POST(req: Request) {
       // Salvar o ID do plano no banco de dados
       await prisma.subscriptionPlan.update({
         where: { id: plan.id },
-        data: { mercadoPagoPlanId },
+        data:
+          selectedDuration === 1
+            ? { mercadoPagoPlanId }
+            : selectedDuration === 6
+              ? { mercadoPagoPlanId6Months: mercadoPagoPlanId }
+              : { mercadoPagoPlanId12Months: mercadoPagoPlanId },
       })
 
       console.log("✅ Plano criado no Mercado Pago:", mercadoPagoPlanId)
@@ -219,7 +245,7 @@ export async function POST(req: Request) {
         `https://api.mercadopago.com/preapproval_plan/${mercadoPagoPlanId}`,
         {
           headers: {
-            Authorization: `Bearer ${process.env.MERCADOPAGO_ACCESS_TOKEN}`,
+            Authorization: `Bearer ${mercadopagoAccessToken}`,
           },
         }
       )
@@ -235,18 +261,22 @@ export async function POST(req: Request) {
         // Criar registro de assinatura pendente
         const currentPeriodStart = new Date()
         const currentPeriodEnd = new Date()
-        currentPeriodEnd.setMonth(currentPeriodEnd.getMonth() + 1)
+        currentPeriodEnd.setMonth(currentPeriodEnd.getMonth() + selectedDuration)
 
         await prisma.subscription.upsert({
           where: { userId: session.user.id },
           create: {
             userId: session.user.id,
             status: "pending",
+            subscriptionPlanId: plan.id,
+            planDurationMonths: selectedDuration,
             currentPeriodStart,
             currentPeriodEnd,
           },
           update: {
             status: "pending",
+            subscriptionPlanId: plan.id,
+            planDurationMonths: selectedDuration,
             currentPeriodStart,
             currentPeriodEnd,
           },
@@ -268,7 +298,7 @@ export async function POST(req: Request) {
       `https://api.mercadopago.com/preapproval_plan/${mercadoPagoPlanId}`,
       {
         headers: {
-          Authorization: `Bearer ${process.env.MERCADOPAGO_ACCESS_TOKEN}`,
+          Authorization: `Bearer ${mercadopagoAccessToken}`,
         },
       }
     )
@@ -290,7 +320,7 @@ export async function POST(req: Request) {
     // Criar registro de assinatura pendente
     const currentPeriodStart = new Date()
     const currentPeriodEnd = new Date()
-    currentPeriodEnd.setMonth(currentPeriodEnd.getMonth() + 1)
+    currentPeriodEnd.setMonth(currentPeriodEnd.getMonth() + selectedDuration)
 
     // Buscar o ID da assinatura do Mercado Pago (pode estar em planInfo.id ou planInfo.subscription_id)
     const mercadoPagoSubscriptionId = planInfo.id || planInfo.subscription_id || null
@@ -301,12 +331,16 @@ export async function POST(req: Request) {
         userId: session.user.id,
         status: "pending",
         mercadoPagoSubscriptionId,
+        subscriptionPlanId: plan.id,
+        planDurationMonths: selectedDuration,
         currentPeriodStart,
         currentPeriodEnd,
       },
       update: {
         status: "pending",
         mercadoPagoSubscriptionId: mercadoPagoSubscriptionId || undefined,
+        subscriptionPlanId: plan.id,
+        planDurationMonths: selectedDuration,
         currentPeriodStart,
         currentPeriodEnd,
       },
@@ -364,4 +398,3 @@ export async function POST(req: Request) {
     )
   }
 }
-

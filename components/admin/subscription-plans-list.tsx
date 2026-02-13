@@ -12,6 +12,8 @@ interface Plan {
   id: string
   name: string
   price: number
+  price6Months?: number | null
+  price12Months?: number | null
   isActive: boolean
   courses: Array<{
     courseId: string
@@ -72,6 +74,8 @@ export function SubscriptionPlansList() {
           id: plan.id,
           name: plan.name,
           price: plan.price,
+          price6Months: plan.price6Months,
+          price12Months: plan.price12Months,
           isActive: !plan.isActive,
           courseIds: plan.courses.map((c) => c.courseId || c.course?.id).filter(Boolean),
         }),
@@ -160,10 +164,18 @@ export function SubscriptionPlansList() {
                         </span>
                       )}
                     </div>
-                    <p className="text-2xl font-black text-white">
-                      R$ {plan.price.toFixed(2)}
-                      <span className="text-lg text-white/60">/mês</span>
-                    </p>
+                    <div className="space-y-1">
+                      <p className="text-2xl font-black text-white">
+                        R$ {plan.price.toFixed(2)}
+                        <span className="text-lg text-white/60">/mês</span>
+                      </p>
+                      <p className="text-sm text-white/70">
+                        6 meses: {plan.price6Months !== null && plan.price6Months !== undefined ? `R$ ${plan.price6Months.toFixed(2)}` : "—"}
+                      </p>
+                      <p className="text-sm text-white/70">
+                        12 meses: {plan.price12Months !== null && plan.price12Months !== undefined ? `R$ ${plan.price12Months.toFixed(2)}` : "—"}
+                      </p>
+                    </div>
                     <p className="text-sm text-white/60 mt-2">
                       {plan.courses.length} curso(s) incluído(s)
                     </p>

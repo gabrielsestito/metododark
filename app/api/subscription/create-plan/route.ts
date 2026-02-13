@@ -1,22 +1,15 @@
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { MercadoPagoConfig } from "mercadopago"
 import { prisma } from "@/lib/prisma"
+import { randomUUID } from "crypto"
 
 // Validar se as chaves do Mercado Pago estão configuradas
 if (!process.env.MERCADOPAGO_ACCESS_TOKEN) {
   console.error("⚠️ MERCADOPAGO_ACCESS_TOKEN não está configurada no arquivo .env")
 }
 
-const client = process.env.MERCADOPAGO_ACCESS_TOKEN
-  ? new MercadoPagoConfig({
-      accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN,
-      options: {
-        timeout: 5000,
-      },
-    })
-  : null
+const mercadopagoAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN || ""
 
 /**
  * Cria ou atualiza um plano de assinatura no Mercado Pago
@@ -33,7 +26,7 @@ export async function POST(req: Request) {
     // Verificar se é admin (você pode adicionar verificação de role aqui)
     // Por enquanto, qualquer usuário autenticado pode criar
 
-    if (!client) {
+    if (!mercadopagoAccessToken) {
       return NextResponse.json(
         {
           error: "Serviço de pagamento não configurado",
@@ -43,11 +36,20 @@ export async function POST(req: Request) {
       )
     }
 
-    const { planId } = await req.json()
+    const { planId, durationMonths } = await req.json()
 
     if (!planId) {
       return NextResponse.json(
         { error: "ID do plano é obrigatório" },
+        { status: 400 }
+      )
+    }
+
+    const selectedDuration = Number(durationMonths) || 1
+    const validDurations = [1, 6, 12]
+    if (!validDurations.includes(selectedDuration)) {
+      return NextResponse.json(
+        { error: "Duração inválida. Use 1, 6 ou 12 meses." },
         { status: 400 }
       )
     }
@@ -112,23 +114,35 @@ export async function POST(req: Request) {
     // Remover barra final se houver
     planBackUrl = planBackUrl.replace(/\/$/, "")
 
-    // Criar plano no Mercado Pago usando a API REST diretamente
-    // O SDK do Mercado Pago v2 não tem suporte direto para Subscription Plans
-    // Vamos usar fetch para chamar a API REST
+    const selectedPrice =
+      selectedDuration === 1
+        ? plan.price
+        : selectedDuration === 6
+          ? plan.price6Months
+          : plan.price12Months
+
+    if (selectedPrice === null || selectedPrice === undefined) {
+      return NextResponse.json(
+        { error: "Preço não configurado para a duração selecionada" },
+        { status: 400 }
+      )
+    }
+
     const mercadoPagoPlanResponse = await fetch(
       "https://api.mercadopago.com/preapproval_plan",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.MERCADOPAGO_ACCESS_TOKEN}`,
+          Authorization: `Bearer ${mercadopagoAccessToken}`,
+          "X-Idempotency-Key": randomUUID(),
         },
         body: JSON.stringify({
           reason: plan.name,
           auto_recurring: {
-            frequency: 1,
+            frequency: selectedDuration,
             frequency_type: "months",
-            transaction_amount: plan.price,
+            transaction_amount: selectedPrice,
             currency_id: "BRL",
             repetitions: null, // null = infinito
           },
@@ -155,9 +169,15 @@ export async function POST(req: Request) {
 
     const mercadoPagoPlan = await mercadoPagoPlanResponse.json()
 
-    // Atualizar plano local com o ID do Mercado Pago
-    // Você pode adicionar um campo mercadoPagoPlanId ao schema se necessário
-    // Por enquanto, vamos apenas retornar o ID
+    await prisma.subscriptionPlan.update({
+      where: { id: plan.id },
+      data:
+        selectedDuration === 1
+          ? { mercadoPagoPlanId: mercadoPagoPlan.id }
+          : selectedDuration === 6
+            ? { mercadoPagoPlanId6Months: mercadoPagoPlan.id }
+            : { mercadoPagoPlanId12Months: mercadoPagoPlan.id },
+    })
 
     return NextResponse.json({
       success: true,
@@ -176,4 +196,3 @@ export async function POST(req: Request) {
     )
   }
 }
-

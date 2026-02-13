@@ -173,11 +173,12 @@ export async function POST(req: Request) {
       }
 
       // Atualizar datas do período
+      const periodMonths = subscription.planDurationMonths || 1
       const currentPeriodStart = mpSubscription.init_point ? new Date() : subscription.currentPeriodStart
       const currentPeriodEnd = mpSubscription.init_point 
         ? (() => {
             const end = new Date()
-            end.setMonth(end.getMonth() + 1)
+            end.setMonth(end.getMonth() + periodMonths)
             return end
           })()
         : subscription.currentPeriodEnd
@@ -194,7 +195,7 @@ export async function POST(req: Request) {
       // Se a assinatura foi ativada, matricular nos cursos do plano
       if (newStatus === "active") {
         const plan = await prisma.subscriptionPlan.findFirst({
-          where: { isActive: true },
+          where: subscription.subscriptionPlanId ? { id: subscription.subscriptionPlanId } : { isActive: true },
           include: {
             courses: {
               include: {
@@ -259,7 +260,7 @@ export async function POST(req: Request) {
       } else if (newStatus === "canceled" || newStatus === "expired" || newStatus === "paused") {
         // Se a assinatura foi cancelada/expirada/pausada, remover acesso aos cursos do plano
         const plan = await prisma.subscriptionPlan.findFirst({
-          where: { isActive: true },
+          where: subscription.subscriptionPlanId ? { id: subscription.subscriptionPlanId } : { isActive: true },
           include: {
             courses: {
               include: {

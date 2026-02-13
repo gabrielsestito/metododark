@@ -14,6 +14,8 @@ interface SubscriptionPlanFormProps {
     id: string
     name: string
     price: number
+    price6Months?: number | null
+    price12Months?: number | null
     isActive: boolean
     courses?: Array<{ 
       courseId: string
@@ -33,6 +35,8 @@ export function SubscriptionPlanForm({ plan, onSuccess, onCancel }: Subscription
   const [formData, setFormData] = useState({
     name: plan?.name || "Assinatura Mensal",
     price: plan?.price.toString() || "29.90",
+    price6Months: plan?.price6Months?.toString() || "",
+    price12Months: plan?.price12Months?.toString() || "",
   })
 
   useEffect(() => {
@@ -86,6 +90,8 @@ export function SubscriptionPlanForm({ plan, onSuccess, onCancel }: Subscription
           ...(plan && { id: plan.id }),
           ...formData,
           price: parseFloat(formData.price),
+          price6Months: parseFloat(formData.price6Months),
+          price12Months: parseFloat(formData.price12Months),
           isActive: true,
           courseIds: Array.from(selectedCourses),
         }),
@@ -153,6 +159,36 @@ export function SubscriptionPlanForm({ plan, onSuccess, onCancel }: Subscription
               value={formData.price}
               onChange={(e) => setFormData({ ...formData, price: e.target.value })}
               required
+              className="bg-[#0a0a0a] border border-white/10 text-white placeholder:text-white/40 focus:border-[#8b5cf6] focus:ring-[#8b5cf6]"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="price6Months" className="text-white/80">Preço 6 Meses (R$) *</Label>
+            <Input
+              id="price6Months"
+              type="number"
+              step="0.01"
+              min="0"
+              value={formData.price6Months}
+              onChange={(e) => setFormData({ ...formData, price6Months: e.target.value })}
+              required
+              placeholder="Ex: 149.90"
+              className="bg-[#0a0a0a] border border-white/10 text-white placeholder:text-white/40 focus:border-[#8b5cf6] focus:ring-[#8b5cf6]"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="price12Months" className="text-white/80">Preço 12 Meses (R$) *</Label>
+            <Input
+              id="price12Months"
+              type="number"
+              step="0.01"
+              min="0"
+              value={formData.price12Months}
+              onChange={(e) => setFormData({ ...formData, price12Months: e.target.value })}
+              required
+              placeholder="Ex: 279.90"
               className="bg-[#0a0a0a] border border-white/10 text-white placeholder:text-white/40 focus:border-[#8b5cf6] focus:ring-[#8b5cf6]"
             />
           </div>
@@ -227,4 +263,3 @@ export function SubscriptionPlanForm({ plan, onSuccess, onCancel }: Subscription
     </Card>
   )
 }
-

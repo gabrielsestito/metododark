@@ -4,6 +4,12 @@ import { requirePermission, unauthorizedResponse } from "@/lib/auth-helpers"
 
 export const dynamic = 'force-dynamic'
 
+const getDurationMonths = (startDate?: Date | null, endDate?: Date | null) => {
+  if (!startDate || !endDate) return null
+  const months = (endDate.getFullYear() - startDate.getFullYear()) * 12 + (endDate.getMonth() - startDate.getMonth())
+  return months > 0 ? months : null
+}
+
 export async function POST(
   req: Request,
   { params }: { params: { id: string } }
@@ -50,18 +56,26 @@ export async function POST(
     }
 
     // Criar ou atualizar assinatura
+    const startDate = currentPeriodStart ? new Date(currentPeriodStart) : new Date()
+    const endDate = currentPeriodEnd ? new Date(currentPeriodEnd) : null
+    const planDurationMonths = getDurationMonths(startDate, endDate)
+
     const subscription = await prisma.subscription.upsert({
       where: { userId: params.id },
       create: {
         userId: params.id,
         status,
-        currentPeriodStart: currentPeriodStart ? new Date(currentPeriodStart) : new Date(),
-        currentPeriodEnd: currentPeriodEnd ? new Date(currentPeriodEnd) : null,
+        subscriptionPlanId: planId,
+        planDurationMonths,
+        currentPeriodStart: startDate,
+        currentPeriodEnd: endDate,
       },
       update: {
         status,
-        currentPeriodStart: currentPeriodStart ? new Date(currentPeriodStart) : undefined,
-        currentPeriodEnd: currentPeriodEnd ? new Date(currentPeriodEnd) : null,
+        subscriptionPlanId: planId,
+        planDurationMonths: planDurationMonths ?? undefined,
+        currentPeriodStart: currentPeriodStart ? startDate : undefined,
+        currentPeriodEnd: endDate,
       },
     })
 
@@ -155,12 +169,18 @@ export async function PUT(
     }
 
     // Atualizar assinatura
+    const startDate = currentPeriodStart ? new Date(currentPeriodStart) : null
+    const endDate = currentPeriodEnd ? new Date(currentPeriodEnd) : null
+    const planDurationMonths = getDurationMonths(startDate, endDate)
+
     const subscription = await prisma.subscription.update({
       where: { userId: params.id },
       data: {
         status,
-        currentPeriodStart: currentPeriodStart ? new Date(currentPeriodStart) : undefined,
-        currentPeriodEnd: currentPeriodEnd ? new Date(currentPeriodEnd) : null,
+        subscriptionPlanId: planId,
+        planDurationMonths: planDurationMonths ?? undefined,
+        currentPeriodStart: startDate || undefined,
+        currentPeriodEnd: endDate,
       },
     })
 

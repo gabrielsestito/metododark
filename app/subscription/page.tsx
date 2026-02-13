@@ -15,6 +15,8 @@ export default function SubscriptionPage() {
   const [loading, setLoading] = useState(false)
   const [subscriptionData, setSubscriptionData] = useState<any>(null)
   const [fetching, setFetching] = useState(true)
+  const [selectedDuration, setSelectedDuration] = useState<Record<string, number>>({})
+  const [checkoutPlanId, setCheckoutPlanId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!session) {
@@ -67,7 +69,7 @@ export default function SubscriptionPage() {
     }
   }
 
-  const handleSubscribe = async (planId: string) => {
+  const handleSubscribe = async (planId: string, durationMonths: number) => {
     if (!session || !planId) return
 
     setLoading(true)
@@ -76,7 +78,7 @@ export default function SubscriptionPage() {
       const response = await fetch("/api/subscription/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId }),
+        body: JSON.stringify({ planId, durationMonths }),
       })
 
       const data = await response.json()
@@ -129,6 +131,24 @@ export default function SubscriptionPage() {
   const hasActiveSubscription = subscriptionData?.hasActiveSubscription
   const plans = subscriptionData?.plans || []
   const subscription = subscriptionData?.subscription
+
+  const getPlanPriceForDuration = (plan: any, duration: number) => {
+    if (duration === 1) return plan.price
+    if (duration === 6) return plan.price6Months
+    if (duration === 12) return plan.price12Months
+    return null
+  }
+
+  const getSavings = (plan: any, duration: number) => {
+    if (duration === 1) return null
+    const selectedPrice = getPlanPriceForDuration(plan, duration)
+    if (selectedPrice === null || selectedPrice === undefined) return null
+    const baseline = plan.price * duration
+    const savings = baseline - selectedPrice
+    if (savings <= 0) return null
+    const percent = Math.round((savings / baseline) * 100)
+    return { savings, percent }
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white py-8 px-4 lg:px-8">
@@ -189,6 +209,9 @@ export default function SubscriptionPage() {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {plans.map((plan: any, index: number) => {
               const isRecommended = index === 1 || (plans.length === 1 && index === 0)
+              const duration = selectedDuration[plan.id] || 1
+              const selectedPrice = getPlanPriceForDuration(plan, duration)
+              const savings = getSavings(plan, duration)
               
               return (
                 <Card
@@ -222,16 +245,59 @@ export default function SubscriptionPage() {
                     <div>
                       <div className="flex items-baseline gap-2 mb-2">
                         <p className="text-4xl font-black text-white">
-                          R$ {plan.price.toFixed(2).replace('.', ',')}
+                          R$ {Number(selectedPrice ?? plan.price).toFixed(2).replace('.', ',')}
                         </p>
-                        <span className="text-lg text-white/60">/mês</span>
+                        <span className="text-lg text-white/60">
+                          {duration === 1 ? "/mês" : `/${duration} meses`}
+                        </span>
                       </div>
+                      {duration > 1 && selectedPrice !== null && selectedPrice !== undefined && (
+                        <p className="text-sm text-white/60">
+                          Equivale a R$ {(selectedPrice / duration).toFixed(2).replace('.', ',')} /mês
+                        </p>
+                      )}
+                      {savings && (
+                        <div className="mt-2 inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-green-500/15 border border-green-500/30">
+                          <span className="text-xs text-green-300 font-semibold">
+                            Economize R$ {savings.savings.toFixed(2).replace('.', ',')} ({savings.percent}%)
+                          </span>
+                        </div>
+                      )}
                       <p className="text-sm text-white/60">
                         {plan.courses?.length || 0} curso{plan.courses?.length !== 1 ? 's' : ''} incluído{plan.courses?.length !== 1 ? 's' : ''}
                       </p>
                     </div>
 
                     <div className="space-y-4 flex-1">
+                      <div className="space-y-3">
+                        <p className="text-sm font-semibold text-white/80">Escolha a duração:</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[1, 6, 12].map((months) => {
+                            const priceForOption = getPlanPriceForDuration(plan, months)
+                            const isDisabled = priceForOption === null || priceForOption === undefined
+                            const isSelected = duration === months
+                            return (
+                              <Button
+                                key={months}
+                                type="button"
+                                variant="outline"
+                                disabled={isDisabled}
+                                onClick={() => {
+                                  setSelectedDuration((prev) => ({ ...prev, [plan.id]: months }))
+                                  setCheckoutPlanId(null)
+                                }}
+                                className={`h-10 text-xs ${
+                                  isSelected
+                                    ? "border-[#8b5cf6] text-white bg-[#8b5cf6]/15"
+                                    : "border-white/10 text-white/70 hover:text-white hover:bg-white/5"
+                                }`}
+                              >
+                                {months} {months === 1 ? "mês" : "meses"}
+                              </Button>
+                            )
+                          })}
+                        </div>
+                      </div>
                       {plan.courses && plan.courses.length > 0 && (
                         <div className="pb-4 border-b border-white/10">
                           <p className="text-sm font-semibold text-white/90 mb-3 flex items-center gap-2">
@@ -278,27 +344,58 @@ export default function SubscriptionPage() {
                     </div>
 
                     {!hasActiveSubscription && (
-                      <Button
-                        onClick={() => handleSubscribe(plan.id)}
-                        disabled={loading}
-                        className={`w-full h-12 text-base font-semibold border-0 ${
-                          isRecommended
-                            ? "bg-gradient-to-r from-[#8b5cf6] to-[#7c3aed] hover:from-[#7c3aed] hover:to-[#6d28d9] text-white shadow-lg shadow-[#8b5cf6]/30"
-                            : "bg-white/5 hover:bg-white/10 text-white border border-white/10"
-                        }`}
-                      >
-                        {loading ? (
-                          <>
-                            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                            Processando...
-                          </>
-                        ) : (
-                          <>
-                            <Crown className="mr-2 h-5 w-5" />
-                            Assinar Agora
-                          </>
+                      <div className="space-y-3">
+                        <Button
+                          onClick={() => setCheckoutPlanId(plan.id)}
+                          disabled={loading || selectedPrice === null || selectedPrice === undefined}
+                          className={`w-full h-12 text-base font-semibold border-0 ${
+                            isRecommended
+                              ? "bg-gradient-to-r from-[#8b5cf6] to-[#7c3aed] hover:from-[#7c3aed] hover:to-[#6d28d9] text-white shadow-lg shadow-[#8b5cf6]/30"
+                              : "bg-white/5 hover:bg-white/10 text-white border border-white/10"
+                          }`}
+                        >
+                          <Crown className="mr-2 h-5 w-5" />
+                          Continuar
+                        </Button>
+                        {checkoutPlanId === plan.id && (
+                          <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
+                            <div className="flex items-center justify-between text-sm text-white/80">
+                              <span>Duração</span>
+                              <span>{duration} {duration === 1 ? "mês" : "meses"}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm text-white/80">
+                              <span>Total</span>
+                              <span>R$ {Number(selectedPrice ?? plan.price).toFixed(2).replace('.', ',')}</span>
+                            </div>
+                            {duration > 1 && selectedPrice !== null && selectedPrice !== undefined && (
+                              <div className="flex items-center justify-between text-xs text-white/60">
+                                <span>Equivalente mensal</span>
+                                <span>R$ {(selectedPrice / duration).toFixed(2).replace('.', ',')}</span>
+                              </div>
+                            )}
+                            {savings && (
+                              <div className="flex items-center justify-between text-xs text-green-300">
+                                <span>Economia</span>
+                                <span>R$ {savings.savings.toFixed(2).replace('.', ',')} ({savings.percent}%)</span>
+                              </div>
+                            )}
+                            <Button
+                              onClick={() => handleSubscribe(plan.id, duration)}
+                              disabled={loading}
+                              className="w-full h-11 text-sm font-semibold bg-gradient-to-r from-[#8b5cf6] to-[#7c3aed] hover:from-[#7c3aed] hover:to-[#6d28d9] text-white border-0"
+                            >
+                              {loading ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  Processando...
+                                </>
+                              ) : (
+                                "Ir para checkout"
+                              )}
+                            </Button>
+                          </div>
                         )}
-                      </Button>
+                      </div>
                     )}
                   </CardContent>
                 </Card>

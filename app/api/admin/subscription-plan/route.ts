@@ -76,11 +76,11 @@ export async function POST(req: Request) {
       )
     }
 
-    const { name, price, courseIds } = await req.json()
+    const { name, price, price6Months, price12Months, courseIds } = await req.json()
 
-    if (!name || !price) {
+    if (!name || price === undefined || price === null || price === "" || price6Months === undefined || price6Months === null || price6Months === "" || price12Months === undefined || price12Months === null || price12Months === "") {
       return NextResponse.json(
-        { error: "Nome e preço são obrigatórios" },
+        { error: "Nome e preços de 1, 6 e 12 meses são obrigatórios" },
         { status: 400 }
       )
     }
@@ -90,6 +90,8 @@ export async function POST(req: Request) {
       data: {
         name,
         price: parseFloat(price),
+        price6Months: parseFloat(price6Months),
+        price12Months: parseFloat(price12Months),
         isActive: true,
         courses: courseIds && Array.isArray(courseIds) && courseIds.length > 0
           ? {
@@ -152,7 +154,7 @@ export async function PUT(req: Request) {
       )
     }
 
-    const { id, name, price, isActive, courseIds } = await req.json()
+    const { id, name, price, price6Months, price12Months, isActive, courseIds } = await req.json()
 
     if (!id) {
       return NextResponse.json(
@@ -182,6 +184,8 @@ export async function PUT(req: Request) {
       data: {
         name,
         price: price ? parseFloat(price) : undefined,
+        price6Months: price6Months ? parseFloat(price6Months) : undefined,
+        price12Months: price12Months ? parseFloat(price12Months) : undefined,
         isActive,
         courses: courseData,
       },
@@ -219,4 +223,3 @@ export async function PUT(req: Request) {
     )
   }
 }
-
