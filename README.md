@@ -136,9 +136,28 @@ Para que a liberação dos cursos seja automática, configure o Webhook:
 3.  **Conecte ao repositório remoto:**
 
     ```bash
-    git remote add origin https://github.com/seu-usuario/nome-do-repositorio.git
+    git remote add origin https://github.com/gabrielsestito/metododark.git
     git branch -M main
     git push -u origin main
+    ```
+
+### 🔄 Como Atualizar e Subir no GitHub
+
+1.  **Verifique alterações**
+    ```bash
+    git status
+    ```
+2.  **Adicione os arquivos**
+    ```bash
+    git add .
+    ```
+3.  **Crie o commit**
+    ```bash
+    git commit -m "Atualiza sistema"
+    ```
+4.  **Envie para o GitHub**
+    ```bash
+    git push origin main
     ```
 
 ---
@@ -146,6 +165,50 @@ Para que a liberação dos cursos seja automática, configure o Webhook:
 ## ☁️ Como Fazer Deploy na VPS (Ubuntu)
 
 Este guia assume que você tem uma VPS com Ubuntu 20.04 ou 22.04 e acesso root/sudo.
+
+### ✅ Como Atualizar o Site na VPS (ordem correta)
+
+1.  **Conecte na VPS**
+    ```bash
+    ssh usuario@seu-ip
+    ```
+2.  **Entre no projeto**
+    ```bash
+    cd /var/www/metodo-dark
+    ```
+3.  **Atualize o código**
+    ```bash
+    git pull origin main
+    ```
+4.  **Instale dependências (se necessário)**
+    ```bash
+    npm install
+    ```
+5.  **Atualize Prisma Client**
+    ```bash
+    npx prisma generate
+    ```
+6.  **Atualize o banco**
+    ```bash
+    npx prisma db push
+    ```
+    Se você usa migrações:
+    ```bash
+    npx prisma migrate deploy
+    ```
+7.  **Build da aplicação**
+    ```bash
+    npm run build
+    ```
+8.  **Reinicie o app**
+    ```bash
+    pm2 restart metodo-dark
+    ```
+
+Se mudou variáveis de ambiente, edite o `.env` antes do build:
+```bash
+nano .env
+```
 
 ### 1. Prepare o Servidor
 
