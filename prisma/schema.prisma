@@ -1,0 +1,439 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  STUDENT
+  ASSISTANT
+  ADMIN
+  FINANCIAL
+  CEO
+}
+
+enum CourseLevel {
+  INICIANTE
+  INTERMEDIARIO
+  AVANCADO
+}
+
+enum CourseCategory {
+  PROGRAMACAO
+  DESIGN
+  MARKETING
+  NEGOCIOS
+  OUTROS
+}
+
+enum ChatSubject {
+  DUVIDA_CURSO
+  PROBLEMA_TECNICO
+  DUVIDA_PAGAMENTO
+  SUGESTAO
+  OUTRO
+}
+
+// Lives
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole @default(STUDENT)
+  createdAt    DateTime @default(now()) @map("created_at")
+  lastRemarketingEmailAt DateTime? @map("last_remarketing_email_at")
+
+  // Relations
+  orders         Order[]
+  enrollments    Enrollment[]
+  lessonProgress LessonProgress[]
+  notifications  Notification[]
+  subscription   Subscription?
+  passwordResetTokens PasswordResetToken[]
+  chats          Chat[]          @relation("UserChats")
+  assignedChats  Chat[]          @relation("AssignedChats")
+  groupChatMessages CourseGroupChatMessage[] @relation("CourseGroupChatMessages")
+  groupChatBans    CourseGroupChatBan[]     @relation("CourseGroupChatBans")
+
+  @@index([email])
+  @@index([role])
+  @@index([lastRemarketingEmailAt])
+  @@map("users")
+}
+
+// ============================================
+// COURSES & CONTENT
+// ============================================
+
+model Course {
+  id           String         @id @default(cuid())
+  title        String
+  slug         String         @unique
+  subtitle     String?
+  description  String?        @db.Text
+  thumbnailUrl String?        @map("thumbnail_url")
+  trailerUrl   String?        @map("trailer_url")
+  price        Float
+  promoPrice   Float?         @map("promo_price")
+  level        CourseLevel
+  category     CourseCategory
+  isPublished  Boolean        @default(false) @map("is_published")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  // Relations
+  modules                Module[]
+  orderItems             OrderItem[]
+  enrollments            Enrollment[]
+  notifications          Notification[]
+  chats                  Chat[]
+  subscriptionPlanCourses SubscriptionPlanCourse[]
+  groupChat              CourseGroupChat?
+
+  @@index([slug])
+  @@index([isPublished])
+  @@index([category])
+  @@index([level])
+  @@map("courses")
+}
+
+model Module {
+  id       String @id @default(cuid())
+  courseId String @map("course_id")
+  title    String
+  order    Int
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  lessons Lesson[]
+
+  @@index([courseId])
+  @@index([courseId, order])
+  @@map("modules")
+}
+
+model Lesson {
+  id            String   @id @default(cuid())
+  moduleId      String   @map("module_id")
+  title         String
+  order         Int
+  videoUrl      String?  @map("video_url")
+  attachmentUrl String?  @map("attachment_url")
+  duration      Int?
+  isFreePreview Boolean  @default(false) @map("is_free_preview")
+  content       String?  @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  module         Module           @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  lessonProgress LessonProgress[]
+  chats          Chat[]
+
+  @@index([moduleId])
+  @@index([moduleId, order])
+  @@map("lessons")
+}
+
+// ============================================
+// ORDERS & PAYMENTS
+// ============================================
+
+model Order {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  paymentId       String?  @unique @map("payment_id")
+  paymentMethod   String   @default("card") @map("payment_method")
+  pixQrCode       String?  @db.Text @map("pix_qr_code")
+  pixCopyPaste    String?  @db.Text @map("pix_copy_paste")
+  total           Float
+  status          String   @default("pending")
+  expiresAt       DateTime? @map("expires_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items OrderItem[]
+
+  @@index([userId])
+  @@index([paymentId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id       String @id @default(cuid())
+  orderId  String @map("order_id")
+  courseId String @map("course_id")
+  price    Float
+
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([courseId])
+  @@map("order_items")
+}
+
+// ============================================
+// ENROLLMENTS & PROGRESS
+// ============================================
+
+model Enrollment {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  courseId  String    @map("course_id")
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  lessonProgress LessonProgress[]
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+  @@index([expiresAt])
+  @@map("enrollments")
+}
+
+model LessonProgress {
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  lessonId     String    @map("lesson_id")
+  enrollmentId String?   @map("enrollment_id")
+  completed    Boolean   @default(false)
+  lastPosition Int       @default(0) @map("last_position")
+  completedAt  DateTime? @map("completed_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson     Lesson      @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  enrollment Enrollment? @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([userId])
+  @@index([lessonId])
+  @@index([enrollmentId])
+  @@index([completed])
+  @@map("lesson_progress")
+}
+
+// ============================================
+// SUBSCRIPTIONS
+// ============================================
+
+model Subscription {
+  id                        String    @id @default(cuid())
+  userId                    String    @unique @map("user_id")
+  status                    String
+  mercadoPagoSubscriptionId String?   @map("mercado_pago_subscription_id")
+  currentPeriodStart        DateTime? @map("current_period_start")
+  currentPeriodEnd          DateTime? @map("current_period_end")
+  cancelAtPeriodEnd         Boolean   @default(false) @map("cancel_at_period_end")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
+  lastExpiryReminderAt      DateTime? @map("last_expiry_reminder_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([currentPeriodEnd])
+  @@index([lastExpiryReminderAt])
+  @@map("subscriptions")
+}
+
+model SubscriptionPlan {
+  id                String   @id @default(cuid())
+  name              String
+  price             Float
+  isActive          Boolean  @default(true) @map("is_active")
+  mercadoPagoPlanId String?  @map("mercado_pago_plan_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  courses SubscriptionPlanCourse[]
+
+  @@index([isActive])
+  @@map("subscription_plans")
+}
+
+model SubscriptionPlanCourse {
+  id                String           @id @default(cuid())
+  subscriptionPlanId String           @map("subscription_plan_id")
+  courseId          String           @map("course_id")
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  subscriptionPlan SubscriptionPlan @relation(fields: [subscriptionPlanId], references: [id], onDelete: Cascade)
+  course           Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionPlanId, courseId])
+  @@index([subscriptionPlanId])
+  @@index([courseId])
+  @@map("subscription_plan_courses")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  courseId  String?  @map("course_id")
+  title     String
+  message   String   @db.Text
+  type      String   @default("info")
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course? @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([read])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================
+// CHAT & SUPPORT
+// ============================================
+
+model Chat {
+  id          String      @id @default(cuid())
+  userId      String      @map("user_id")
+  assignedTo  String?     @map("assigned_to")
+  subject     ChatSubject
+  description String?     @db.Text
+  status      String      @default("open")
+  courseId    String?     @map("course_id")
+  lessonId    String?     @map("lesson_id")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  user       User          @relation("UserChats", fields: [userId], references: [id], onDelete: Cascade)
+  assignedAdmin User?      @relation("AssignedChats", fields: [assignedTo], references: [id], onDelete: SetNull)
+  course     Course?       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lesson     Lesson?       @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  messages   ChatMessage[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([assignedTo])
+  @@index([courseId])
+  @@index([lessonId])
+  @@index([createdAt])
+  @@map("chats")
+}
+
+model ChatMessage {
+  id            String   @id @default(cuid())
+  chatId        String   @map("chat_id")
+  senderId      String?  @map("sender_id")
+  content       String   @db.Text
+  attachmentUrl String?  @map("attachment_url")
+  attachmentName String? @map("attachment_name")
+  isSystem      Boolean  @default(false) @map("is_system")
+  read          Boolean  @default(false)
+  readAt        DateTime? @map("read_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId])
+  @@index([read])
+  @@index([createdAt])
+  @@map("chat_messages")
+}
+
+// ============================================
+// COURSE GROUP CHAT
+// ============================================
+
+model CourseGroupChat {
+  id        String   @id @default(cuid())
+  courseId  String   @unique @map("course_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  course  Course                  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  messages CourseGroupChatMessage[]
+  bans    CourseGroupChatBan[]
+
+  @@index([courseId])
+  @@map("course_group_chats")
+}
+
+model CourseGroupChatMessage {
+  id            String   @id @default(cuid())
+  chatId        String   @map("chat_id")
+  senderId      String?  @map("sender_id")
+  content       String   @db.Text
+  attachmentUrl String?  @map("attachment_url")
+  attachmentName String? @map("attachment_name")
+  isDeleted     Boolean  @default(false) @map("is_deleted")
+  deletedBy     String?  @map("deleted_by")
+  deletedAt     DateTime? @map("deleted_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  chat   CourseGroupChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender User?           @relation("CourseGroupChatMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([chatId])
+  @@index([senderId])
+  @@index([createdAt])
+  @@index([isDeleted])
+  @@map("course_group_chat_messages")
+}
+
+model CourseGroupChatBan {
+  id        String    @id @default(cuid())
+  chatId    String    @map("chat_id")
+  userId    String    @map("user_id")
+  bannedBy  String    @map("banned_by")
+  reason    String?   @db.Text
+  type      String    @default("ban") // "ban" ou "suspension"
+  expiresAt DateTime? @map("expires_at") // Para suspensões temporárias
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  chat CourseGroupChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user User            @relation("CourseGroupChatBans", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, userId])
+  @@index([chatId])
+  @@index([userId])
+  @@map("course_group_chat_bans")
+}
